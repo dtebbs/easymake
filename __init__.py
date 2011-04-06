@@ -11,45 +11,61 @@ allmodules = {}
 OBJPATH = 'obj'
 LIBPATH = 'lib'
 
+config = "debug"
 sysincdirs = []
+sysincdirs += [ "." ]
+
 
 ############################################################
 
 def _config(env):
 
+    commonflags = [ "-fpic",
+                    "-mthumb-interwork",
+                    "-ffunction-sections",
+                    "-funwind-tables",
+                    "-fstack-protector",
+                    "-fno-short-enums",
+                    "-fno-exceptions",
+                    "-march=armv5te",
+                    "-mtune=xscale",
+                    "-msoft-float",
+                    "-fomit-frame-pointer",
+                    "-fno-strict-aliasing",
+                    "-finline-limit=64",
+                    "-Wall",
+                    "-Wno-psabi",
+                    "-D__ARM_ARCH_5__",
+                    "-D__ARM_ARCH_5T__",
+                    "-D__ARM_ARCH_5E__",
+                    "-D__ARM_ARCH_5TE__",
+                    "-DANDROID",
+                    "-DD_GLES11",
+                    "-DPACKAGENAME=\"finalfwy\"",
+                    "-DGAME_COM_DOMAIN_STR=\"com.dpasca.therun\"" ]
+
+    if config == "debug":
+        commonflags += [ "-O0", "-DDEBUG", "-D_DEBUG" ]
+    else:
+        commonflags += [ "-Os", "-DNDEBUG" ]
+
+    # CXX
+
     env['CXX'] = "../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-g++"
-    env['CXXFLAGS'] = [ "-fpic",
-                        "-mthumb-interwork",
-                        "-ffunction-sections",
-                        "-funwind-tables",
-                        "-fstack-protector",
-                        "-fno-short-enums",
-                        "-fno-rtti",
-                        "-fno-exceptions",
-                        "-march=armv5te",
-                        "-mtune=xscale",
-                        "-msoft-float",
-                        "-fomit-frame-pointer",
-                        "-fno-strict-aliasing",
-                        "-finline-limit=64",
-                        "-Wall",
-                        "-Wno-reorder",
-                        "-Wno-psabi",
-                        "-D__ARM_ARCH_5__",
-                        "-D__ARM_ARCH_5T__",
-                        "-D__ARM_ARCH_5E__",
-                        "-D__ARM_ARCH_5TE__",
-                        "-DANDROID",
-                        "-Os",
-                        "-DNDEBUG",
-                        "-DD_GLES11",
-                        "-DPACKAGENAME=\"finalfwy\"",
-                        "-DGAME_COM_DOMAIN_STR=\"com.dpasca.therun\"" ]
+    env['CXXFLAGS'] = commonflags + [ "-fno-rtti", "-Wno-reorder" ]
+
+    # CC
+
+    env["CC"] = "../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-gcc"
+    env["CFLAGS"] = commonflags
 
     global sysincdirs
-    sysincdirs = [ "../../android-ndk-r5/platforms/android-8/arch-arm/usr/include",
+    sysincdirs +=[ "../../android-ndk-r5/platforms/android-8/arch-arm/usr/include",
                    "../../android-ndk-r5/sources/cxx-stl/system/include",
                    "Apps/TheRun/android/core/nativesrc" ]
+
+    env['AR'] = "../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-ar"
+    env['RANLIB'] = "../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-ranlib"
 
 
 # ../../../../../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-g++ -I../../../../../../android-ndk-r5/platforms/android-8/arch-arm/usr/include -I../../../../../../android-ndk-r5/sources/cxx-stl/system/include -c  -I../core/./nativesrc -I../core/../../../../DGameSystem/include -I../core/../../../../DSystem/include -I../core/../../../../DMath/include -I../core/../../../../externals/libpng -I../../src /Users/dtebbs/android/dev/therun/Apps/TheRun/android/core/nativesrc/native_onlinehiscore.cpp -o objs/native_onlinehiscore.o
@@ -66,16 +82,48 @@ class Library(Module):
     # _incdirs
     # _depnames
     # _fulldeps
-    def __init__(self, name, srcdirs="", incdirs="", deps=[]):
+    def __init__(self, name,
+                 srcdirs=[],
+                 incdirs=[],
+                 deps=[],
+                 srcfiles = [],
+                 srcexcludes = []):
         super(Library, self).__init__()
         self._name = name
 
-        if isinstance(srcdirs, str):
-            self._srcdirs = [ srcdirs ]
-        else:
-            self._srcdirs = srcdirs
+        if (srcfiles != []) and (srcdirs != []):
+            raise "Cannot use both srcdirs and srcfiles attributes"
+
+        # _srcdirs
 
         if isinstance(srcdirs, str):
+            self._srcdirs = [ srcdirs ]
+        elif len(srcdirs) != 0:
+            self._srcdirs = srcdirs
+        else:
+            self._srcdirs = []
+
+        # _srcfiles
+
+        if isinstance(srcfiles, str):
+            self._srcfiles = [ srcfiles ]
+        elif len(srcfiles) != 0:
+            self._srcfiles = srcfiles
+        else:
+            self._srcfiles = []
+
+        # _srcexcludes
+
+        if isinstance(srcexcludes, str):
+            self._srcexcludes = [srcexcludes]
+        elif len(srcexcludes) != 0:
+            self._srcexcludes = srcexcludes
+        else:
+            self._srcexcludes = []
+
+        # _incdirs
+
+        if isinstance(incdirs, str):
             self._incdirs = [ incdirs ]
         else:
             self._incdirs = incdirs
@@ -122,14 +170,21 @@ class Library(Module):
     def _defineobjects(self, env):
         allsrc = []
 
-        if self._srcdirs is not None:
-            for sd in self._srcdirs:
-                globpath = sd + "/*.cpp"
-                print "globbing: %s" % globpath
-                allsrc += env.Glob(globpath)
-                globpath = sd + "/*.c"
-                print "globbing: %s" % globpath
-                allsrc += env.Glob(globpath)
+        for sd in self._srcdirs:
+            globres = env.Glob(sd + "/*.cpp")
+            globres += env.Glob(sd + "/*.c")
+
+            srcglob = []
+            for g in globres:
+                if not str(g) in self._srcexcludes:
+                    srcglob += [ g ]
+
+            allsrc += srcglob
+
+        for sf in self._srcfiles:
+            if not sf in self._srcexcludes:
+                allsrc += env.Glob(sf)
+
         print "Mod %s: src: %s" %(self._name, [str(i) for i in allsrc])
 
         # Object directory
