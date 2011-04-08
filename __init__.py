@@ -4,21 +4,48 @@ import os
 print "Import easymake"
 
 libs = {}
+dlls = {}
 apps = {}
-
 allmodules = {}
-
-OBJPATH = 'obj'
-LIBPATH = 'lib'
-
-config = "debug"
-sysincdirs = []
-sysincdirs += [ "." ]
-
 
 ############################################################
 
-def _config(env):
+platform = "android"
+config = "debug"
+
+OBJPATH = "obj/%s-%s" % (platform, config)
+LIBPATH = "lib/%s-%s" % (platform, config)
+DLLPATH = "dll/%s-%s" % (platform, config)
+
+sysincdirs = []
+#sysincdirs += [ "." ]
+
+NDK_ROOT = "../../android-ndk-r5"
+NDK_TOOLCHAIN_ROOT = NDK_ROOT + "/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86"
+NDK_TOOLSBIN = NDK_TOOLCHAIN_ROOT+"/bin"
+NDK_TOOLSLIB = NDK_TOOLCHAIN_ROOT+"/lib/gcc/arm-linux-androideabi/4.4.3/"
+NDK_PLATFORM_ROOT = NDK_ROOT + "/platforms/android-8/arch-arm"
+NDK_PLATFORMLIB = NDK_PLATFORM_ROOT+"/usr/lib"
+
+LINKDLL = NDK_TOOLSBIN + "/arm-linux-androideabi-gcc"
+LINKDLL_FLAGS = " -nostdlib -Wl,-soname,lib.so -Wl,-shared,-Bsymbolic"
+LINKDLL_FLAGS_POST = "-Wl,--no-whole-archive --sysroot="+NDK_PLATFORM_ROOT
+LINKDLL_FLAGS_POST += "-Wl,--no-undefined -Wl,-z,noexecstack"
+LINKDLL_FLAGS_POST += "-Wl,-rpath-link="+NDK_PLATFORMLIB
+linkdll_out = "-o"
+
+syslibpaths = [ NDK_PLATFORMLIB ]
+syslibs = [ NDK_TOOLSLIB+"/libgcc.a",
+            NDK_PLATFORMLIB+"/libc.so",
+            NDK_PLATFORMLIB+"/libstdc++.so",
+            NDK_PLATFORMLIB+"/libm.so",
+            "-lGLESv1_CM",
+            "-llog",
+            ]
+
+############################################################
+
+def _config(env, config):
 
     commonflags = [ "-fpic",
                     "-mthumb-interwork",
@@ -39,10 +66,7 @@ def _config(env):
                     "-D__ARM_ARCH_5T__",
                     "-D__ARM_ARCH_5E__",
                     "-D__ARM_ARCH_5TE__",
-                    "-DANDROID",
-                    "-DD_GLES11",
-                    "-DPACKAGENAME=\"finalfwy\"",
-                    "-DGAME_COM_DOMAIN_STR=\"com.dpasca.therun\"" ]
+                    "-DANDROID" ]
 
     if config == "debug":
         commonflags += [ "-O0", "-DDEBUG", "-D_DEBUG" ]
@@ -53,49 +77,52 @@ def _config(env):
 
     env['CXX'] = "../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-g++"
     env['CXXFLAGS'] = commonflags + [ "-fno-rtti", "-Wno-reorder" ]
+    if 'CXXFLAGS' in config:
+        env['CXXFLAGS'] += config['CXXFLAGS']
 
     # CC
 
     env["CC"] = "../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-gcc"
     env["CFLAGS"] = commonflags
+    if 'CFLAGS' in config:
+        env['CFLAGS'] += config['CFLAGS']
 
     global sysincdirs
     sysincdirs +=[ "../../android-ndk-r5/platforms/android-8/arch-arm/usr/include",
-                   "../../android-ndk-r5/sources/cxx-stl/system/include",
-                   "Apps/TheRun/android/core/nativesrc" ]
+                   "../../android-ndk-r5/sources/cxx-stl/system/include"]
 
     env['AR'] = "../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-ar"
     env['RANLIB'] = "../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-ranlib"
 
+    # LINK
 
-# ../../../../../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-g++ -I../../../../../../android-ndk-r5/platforms/android-8/arch-arm/usr/include -I../../../../../../android-ndk-r5/sources/cxx-stl/system/include -c  -I../core/./nativesrc -I../core/../../../../DGameSystem/include -I../core/../../../../DSystem/include -I../core/../../../../DMath/include -I../core/../../../../externals/libpng -I../../src /Users/dtebbs/android/dev/therun/Apps/TheRun/android/core/nativesrc/native_onlinehiscore.cpp -o objs/native_onlinehiscore.o
+    env['LIBTOOL'] = "adsf"
+    env['LINK'] = "afadsf"
 
 ############################################################
 
+#
+#
+#
 class Module(object):
-    def __init__(self):
-        pass
-
-class Library(Module):
     # _name
     # _srcdirs
     # _incdirs
     # _depnames
     # _fulldeps
     def __init__(self, name,
-                 srcdirs=[],
-                 incdirs=[],
-                 deps=[],
-                 srcfiles = [],
-                 srcexcludes = []):
-        super(Library, self).__init__()
+                 srcdirs,
+                 incdirs,
+                 deps,
+                 srcfiles,
+                 srcexcludes,
+                 incdirs_internal):
         self._name = name
 
         if (srcfiles != []) and (srcdirs != []):
             raise "Cannot use both srcdirs and srcfiles attributes"
 
         # _srcdirs
-
         if isinstance(srcdirs, str):
             self._srcdirs = [ srcdirs ]
         elif len(srcdirs) != 0:
@@ -104,7 +131,6 @@ class Library(Module):
             self._srcdirs = []
 
         # _srcfiles
-
         if isinstance(srcfiles, str):
             self._srcfiles = [ srcfiles ]
         elif len(srcfiles) != 0:
@@ -113,7 +139,6 @@ class Library(Module):
             self._srcfiles = []
 
         # _srcexcludes
-
         if isinstance(srcexcludes, str):
             self._srcexcludes = [srcexcludes]
         elif len(srcexcludes) != 0:
@@ -122,20 +147,16 @@ class Library(Module):
             self._srcexcludes = []
 
         # _incdirs
-
         if isinstance(incdirs, str):
             self._incdirs = [ incdirs ]
         else:
             self._incdirs = incdirs
+        self._incdirs_internal = incdirs_internal
 
         self._depnames = deps
 
         self._fulldeps = None
         self._target = None
-
-        if name in libs:
-            print "Library %s already defined" % name
-        libs[name] = self
 
     #
     def _calcdeps(self):
@@ -198,7 +219,7 @@ class Library(Module):
         for d in self._fulldeps:
             includepaths += [ d._incdirs ]
         includepaths += [ self._incdirs ]
-
+        includepaths += self._incdirs_internal
         # Create the rules
 
         objects = []
@@ -212,6 +233,30 @@ class Library(Module):
                                   CPPPATH=includepaths)
         return objects
 
+#
+#
+#
+class Library(Module):
+
+
+    def __init__(self, name,
+                 srcdirs=[],
+                 incdirs=[],
+                 deps=[],
+                 srcfiles = [],
+                 srcexcludes = [],
+                 incdirs_internal = []):
+        super(Library, self).__init__(name,
+                                      srcdirs,
+                                      incdirs,
+                                      deps,
+                                      srcfiles,
+                                      srcexcludes,
+                                      incdirs_internal)
+        if name in libs:
+            print "Library %s already defined" % name
+        libs[name] = self
+
     #
     def _definescons(self, env):
         if not self._target is None:
@@ -223,22 +268,88 @@ class Library(Module):
 
         self._target = env.StaticLibrary(target=LIBPATH+"/"+self._name,
                                          source=objects)
+        print "Lib: %s target: %s" % (self._name, self._target)
+
+#
+#
+#
+class DynamicLibrary(Module):
+
+    def __init__(self, name,
+                 srcdirs=[],
+                 incdirs=[],
+                 deps=[],
+                 srcfiles = [],
+                 srcexcludes = [],
+                 incdirs_internal = []):
+        super(DynamicLibrary, self).__init__(name,
+                                             srcdirs,
+                                             incdirs,
+                                             deps,
+                                             srcfiles,
+                                             srcexcludes,
+                                             incdirs_internal)
+        if name in dlls:
+            print "DynamicLibrary %s already defined" % name
+        dlls[name] = self
+
+    def _definescons(self, env):
+        if not self._target is None:
+            return
+
+        # Make sure any dependent libs have defined their targets
+
+        for d in self._fulldeps:
+            d._definescons(env)
+
+        # Object rules
+
+        objects = self._defineobjects(env)
+
+        # Our build requirements:
+
+        deplibs = []
+        for d in self._fulldeps:
+            deplibs += d._target
+
+        dllout = DLLPATH + "/lib" + self._name + ".so"
+        deplibsS = [ str(l) for l in deplibs ]
+        deplibS = " ".join(deplibsS)
+
+        objectsS = [ str(o) for o in objects ]
+        objectS = " ".join(objectsS)
+
+        #self._target = env.File(DLLPATH + "/lib" + self._name + ".so")
+        #env.Depends(self._target, objects)
+
+        cmd  = LINKDLL + " " + LINKDLL_FLAGS
+        cmd += " " + deplibS + " " + objectS
+        cmd += " " + " ".join([ "-L"+path for path in syslibpaths ])
+        cmd += " " + " ".join(syslibs)
+        cmd += " " + LINKDLL_FLAGS_POST
+        cmd += " " + linkdll_out + " $TARGET"
+        self._target = env.Command(dllout, objects, cmd)
+        env.Depends(self._target, deplibs)
+
+        # self._target = env.SharedLibrary(target=DLLPATH+"/"+self._name,
+        #                                  source=objects)
 
 ############################################################
 
-def build(env):
+def build(env, config):
 
     # configuration
 
-    _config(env)
+    _config(env, config)
 
     # List of all modules
 
-    for l in libs:
-        allmodules[l] = libs[l]
-    for a in apps:
-        allmodules[a] = apps[a]
-
+    for m in libs:
+        allmodules[m] = libs[m]
+    for m in dlls:
+        allmodules[m] = dlls[m]
+    for m in apps:
+        allmodules[m] = apps[m]
     # Calculate full dependencies
 
     for m in allmodules:
