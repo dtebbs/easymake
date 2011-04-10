@@ -3,109 +3,71 @@ import os
 
 print "Import easymake"
 
-libs = {}
-dlls = {}
-apps = {}
-allmodules = {}
+############################################################
+
+class Config(object):
+    def __init__(self,
+                 buildconfig="debug",
+                 platform="android"
+                 ):
+        self.buildconfig = buildconfig
+        self.platform = platform
 
 ############################################################
 
-# flags
-# TOOLS
-# TOOLFLAGS
-# toolflags
+class Settings(object):
+    def __init__(self, config):
 
+        platform = config.platform
+        buildconfig = config.buildconfig
 
+        self.OBJPATH = "obj/%s-%s" % (platform, buildconfig)
+        self.LIBPATH = "lib/%s-%s" % (platform, buildconfig)
+        self.DLLPATH = "dll/%s-%s" % (platform, buildconfig)
 
-platform = "android"
-config = "debug"
+        self.sysincdirs = []
+        self.syslibpaths = []
+        self.syslibs = []
+        self.dllsyslibs = []
 
-OBJPATH = "obj/%s-%s" % (platform, config)
-LIBPATH = "lib/%s-%s" % (platform, config)
-DLLPATH = "dll/%s-%s" % (platform, config)
+        self.CXX = None
+        self.CXXFLAGS = []
+        self.CC = None
+        self.CFLAGS = []
+        self.AR = None
+        self.RANLIB = None
+        self.LIBTOOL = None
+        self.LINK = None
 
-sysincdirs = []
-#sysincdirs += [ "." ]
+        self.scons_make_objects = None
+        self.scons_make_staticlib = None
+        self.scons_make_dynamiclib = None
 
-NDK_ROOT = "../../android-ndk-r5"
-NDK_TOOLCHAIN_ROOT = NDK_ROOT + "/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86"
-NDK_TOOLSBIN = NDK_TOOLCHAIN_ROOT+"/bin"
-NDK_TOOLSLIB = NDK_TOOLCHAIN_ROOT+"/lib/gcc/arm-linux-androideabi/4.4.3"
-NDK_PLATFORM_ROOT = NDK_ROOT + "/platforms/android-8/arch-arm"
-NDK_PLATFORMLIB = NDK_PLATFORM_ROOT+"/usr/lib"
-
-LINKDLL = NDK_TOOLSBIN + "/arm-linux-androideabi-gcc"
-LINKDLL_FLAGS = " -nostdlib -Wl,-soname,lib.so -Wl,-shared,-Bsymbolic"
-LINKDLL_FLAGS_POST = "-Wl,--no-whole-archive --sysroot="+NDK_PLATFORM_ROOT
-LINKDLL_FLAGS_POST += "-Wl,--no-undefined -Wl,-z,noexecstack"
-LINKDLL_FLAGS_POST += "-Wl,-rpath-link="+NDK_PLATFORMLIB
-linkdll_out = "-o"
-
-syslibpaths = [ NDK_PLATFORMLIB ]
-syslibs = [ NDK_TOOLSLIB+"/libgcc.a",
-            NDK_PLATFORMLIB+"/libc.so",
-            NDK_PLATFORMLIB+"/libstdc++.so",
-            NDK_PLATFORMLIB+"/libm.so",
-            "-lGLESv1_CM",
-            "-llog",
-            "-lz"
-            ]
+        pass
 
 ############################################################
 
-def _config(env, config):
-
-    commonflags = [ "-fpic",
-                    "-mthumb-interwork",
-                    "-ffunction-sections",
-                    "-funwind-tables",
-                    "-fstack-protector",
-                    "-fno-short-enums",
-                    "-fno-exceptions",
-                    "-march=armv5te",
-                    "-mtune=xscale",
-                    "-msoft-float",
-                    "-fomit-frame-pointer",
-                    "-fno-strict-aliasing",
-                    "-finline-limit=64",
-                    "-Wall",
-                    "-Wno-psabi",
-                    "-D__ARM_ARCH_5__",
-                    "-D__ARM_ARCH_5T__",
-                    "-D__ARM_ARCH_5E__",
-                    "-D__ARM_ARCH_5TE__",
-                    "-DANDROID" ]
-
-    if config == "debug":
-        commonflags += [ "-O0", "-DDEBUG", "-D_DEBUG" ]
+def _make_str_array(stringOrArray):
+    if isinstance(stringOrArray, str):
+        return [ stringOrArray ]
+    elif isinstance(stringOrArray, list):
+        return stringOrArray
+    elif stringOrArray is None:
+        return []
     else:
-        commonflags += [ "-Os", "-DNDEBUG" ]
+        raise "Object %s cannot be converted to array of string" % stringOrArray
 
-    # CXX
+############################################################
 
-    env['CXX'] = "../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-g++"
-    env['CXXFLAGS'] = commonflags + [ "-fno-rtti", "-Wno-reorder" ]
-    if 'CXXFLAGS' in config:
-        env['CXXFLAGS'] += config['CXXFLAGS']
+# Config is passed to the platform-specific config file, which fills
+# out a settings objects.
 
-    # CC
-
-    env["CC"] = "../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-gcc"
-    env["CFLAGS"] = commonflags
-    if 'CFLAGS' in config:
-        env['CFLAGS'] += config['CFLAGS']
-
-    global sysincdirs
-    sysincdirs +=[ "../../android-ndk-r5/platforms/android-8/arch-arm/usr/include",
-                   "../../android-ndk-r5/sources/cxx-stl/system/include"]
-
-    env['AR'] = "../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-ar"
-    env['RANLIB'] = "../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-ranlib"
-
-    # LINK
-
-    env['LIBTOOL'] = "adsf"
-    env['LINK'] = "afadsf"
+# Functions:
+#    scons_make_objects
+#    scons_make_staticlib
+#    scons_make_dynamiclib
+# Take args:  (module, env, config, settings)
+# Return: [ <targets> ]
 
 ############################################################
 
@@ -130,40 +92,18 @@ class Module(object):
         if (srcfiles != []) and (srcdirs != []):
             raise "Cannot use both srcdirs and srcfiles attributes"
 
-        # _srcdirs
-        if isinstance(srcdirs, str):
-            self._srcdirs = [ srcdirs ]
-        elif len(srcdirs) != 0:
-            self._srcdirs = srcdirs
-        else:
-            self._srcdirs = []
+        self._srcdirs = _make_str_array(srcdirs)
+        self._incdirs = _make_str_array(incdirs)
+        self._srcfiles = _make_str_array(srcfiles)
+        self._srcexcludes = _make_str_array(srcexcludes)
+        self._incdirs_internal = _make_str_array(incdirs_internal)
 
-        # _srcfiles
-        if isinstance(srcfiles, str):
-            self._srcfiles = [ srcfiles ]
-        elif len(srcfiles) != 0:
-            self._srcfiles = srcfiles
-        else:
-            self._srcfiles = []
-
-        # _srcexcludes
-        if isinstance(srcexcludes, str):
-            self._srcexcludes = [srcexcludes]
-        elif len(srcexcludes) != 0:
-            self._srcexcludes = srcexcludes
-        else:
-            self._srcexcludes = []
-
-        # _incdirs
-        if isinstance(incdirs, str):
-            self._incdirs = [ incdirs ]
-        else:
-            self._incdirs = incdirs
-        self._incdirs_internal = incdirs_internal
-
+        # Deps get resolved later
         self._depnames = deps
 
+        # For now, keep these as None
         self._fulldeps = None
+        self._objects = None
         self._target = None
 
     #
@@ -200,7 +140,18 @@ class Module(object):
         print "Module %s has deps: %s" %(self._name, [a._name for a in self._fulldeps])
 
     #
-    def _defineobjects(self, env):
+    def _defineobjects(self, env, config, settings):
+
+        # Use platform specific version if it exists
+
+        if not settings.scons_make_objects is None:
+            fn = settings.scons_make_objects
+            self._objects = fn(self, env, config, settings)
+            return self._objects
+
+        # Regular scons version.  Collect src files, filtering out
+        # excludes.
+
         allsrc = []
 
         for sd in self._srcdirs:
@@ -218,20 +169,21 @@ class Module(object):
             if not sf in self._srcexcludes:
                 allsrc += env.Glob(sf)
 
-        print "Mod %s: src: %s" %(self._name, [str(i) for i in allsrc])
+        srcS = [str(s) for s in allsrc]
+        print "Mod %s: src: %s" %(self._name, srcS)
 
         # Object directory
 
-        objectpath = OBJPATH + "/" + self._name
+        objectpath = settings.OBJPATH + "/" + self._name
 
         # Full include paths for this module
 
-        includepaths = []
-        includepaths += sysincdirs
+        includepaths = settings.sysincdirs
         for d in self._fulldeps:
             includepaths += [ d._incdirs ]
         includepaths += [ self._incdirs ]
         includepaths += self._incdirs_internal
+
         # Create the rules
 
         objects = []
@@ -240,9 +192,14 @@ class Module(object):
             sbase = os.path.basename(s)
             (objname, ext) = os.path.splitext(sbase)
 
+            obj=objectpath+"/"+objname
+            print "Object: %s source: %s" % (obj, s)
+
             objects += env.Object(source=s,
-                                  target=objectpath+"/"+objname,
+                                  target=obj,
                                   CPPPATH=includepaths)
+
+        self._objects = objects
         return objects
 
 #
@@ -270,15 +227,25 @@ class Library(Module):
         libs[name] = self
 
     #
-    def _definescons(self, env):
+    def _definescons(self, env, config, settings):
         if not self._target is None:
+            return
+
+        # Make sure objects have been defined for this module
+
+        objects = self._defineobjects(env, config, settings)
+
+        # Custom static lib creation?
+
+        if not settings.scons_make_staticlib is None:
+            fn = settings.scons_make_staticlib
+            self._target = fn(mod, env, config, settings)
             return
 
         # Not much to do for static libs
 
-        objects = self._defineobjects(env)
-
-        self._target = env.StaticLibrary(target=LIBPATH+"/"+self._name,
+        libfile = settings.LIBPATH+"/"+self._name
+        self._target = env.StaticLibrary(target=libfile,
                                          source=objects)
         print "Lib: %s target: %s" % (self._name, self._target)
 
@@ -305,65 +272,39 @@ class DynamicLibrary(Module):
             print "DynamicLibrary %s already defined" % name
         dlls[name] = self
 
-    def _definescons(self, env):
+    def _definescons(self, env, config, settings):
         if not self._target is None:
             return
 
-        # Make sure any dependent libs have defined their targets
+        # Make sure all deps targets are created, and get the object
+        # list
 
         for d in self._fulldeps:
-            d._definescons(env)
+            d._definescons(env, config, settings)
+        objects = self._defineobjects(env, config, settings)
 
-        # Object rules
+        # Platform-specific version?
 
-        objects = self._defineobjects(env)
+        if not settings.scons_make_dynamiclib is None:
+            fn = settings.scons_make_dynamiclib
+            self._target = fn(self, env, config, settings)
+            return
 
-        # Our build requirements:
+        # Standard version.  Get all lib requirements
 
         deplibs = []
         for d in self._fulldeps:
             deplibs += d._target
+        deplibs += settings.dllsyslibs
 
-        dllout = DLLPATH + "/lib" + self._name + ".so"
-        deplibsS = [ str(l) for l in deplibs ]
-        deplibS = " ".join(deplibsS)
+        dllout = settings.DLLPATH + "/lib" + self._name + ".so"
+        syslibpaths = settings.syslibpaths
 
-        objectsS = [ str(o) for o in objects ]
-        objectS = " ".join(objectsS)
+        self._target = env.SharedLibrary(target = dllout,
+                                         source = objects,
+                                         LIBS = deplibs,
+                                         LIBPATH = syslibpaths)
 
-        #self._target = env.File(DLLPATH + "/lib" + self._name + ".so")
-        #env.Depends(self._target, objects)
-
-        cmd  = LINKDLL + " " + LINKDLL_FLAGS
-        cmd += " " + objectS
-        cmd += " " + LINKDLL_FLAGS_POST
-        cmd += " " + deplibS
-        cmd += " " + " ".join(syslibs)
-        cmd += " " + " ".join([ "-L"+path for path in syslibpaths ])
-        cmd += " " + linkdll_out + " $TARGET"
-        self._target = env.Command(dllout, objects, cmd)
-        env.Depends(self._target, deplibs)
-
-"""
-WORKING:
-../../../../../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-gcc
- -nostdlib
- -Wl,-soname,lib.so
- -Wl,-shared,-Bsymbolic
- <object files>
- -Wl,--no-whole-archive --sysroot=../../../../../../android-ndk-r5/platforms/android-8/arch-arm
- ../../../../../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/lib/gcc/arm-linux-androideabi/4.4.3/libgcc.a
- ../../../../../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib/libc.so
- ../../../../../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib/libstdc++.so
- ../../../../../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib/libm.so
- -Wl,--no-undefined
- -Wl,-z,noexecstack
- -L../../../../../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib
- -lGLESv1_CM
- -llog
- -Wl,-rpath-link=../../../../../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib
- -o libs/armeabi/liboyk-core.so
-"""
 
 """
 ../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-gcc
@@ -395,11 +336,48 @@ WORKING:
 
 ############################################################
 
-def build(env, config):
+libs = {}
+dlls = {}
+apps = {}
+allmodules = {}
+
+############################################################
+
+############################################################
+# Build
+############################################################
+
+def setenv(env, name, value):
+    if value is None:
+        return
+    if isinstance(value, list) and len(value) == 0:
+        return
+    print "setting env['%s'] = %s" % (name, value)
+    env[name] = value
+
+def build(env, config, settings = None):
+
+    # Settings for this platform
+
+    exec('import config_'+config.platform+ ' as _config')
+
+    if settings is None:
+        settings = Settings(config)
 
     # configuration
 
-    _config(env, config)
+    _config._config(config, settings)
+
+    # Set up the env
+
+    setenv(env, 'CXX', settings.CXX)
+    setenv(env, 'CXXFLAGS', settings.CXXFLAGS)
+    setenv(env, 'CC', settings.CC)
+    setenv(env, 'CFLAGS', settings.CFLAGS)
+    setenv(env, 'AR', settings.AR)
+    setenv(env, 'RANLIB', settings.RANLIB)
+    setenv(env, 'LIBTOOL', settings.LIBTOOL)
+    setenv(env, 'LINK', settings.LINK)
 
     # List of all modules
 
@@ -409,6 +387,7 @@ def build(env, config):
         allmodules[m] = dlls[m]
     for m in apps:
         allmodules[m] = apps[m]
+
     # Calculate full dependencies
 
     for m in allmodules:
@@ -419,4 +398,5 @@ def build(env, config):
 
     for m in allmodules:
         mod = allmodules[m]
-        mod._definescons(env)
+        mod._definescons(env, config, settings)
+
