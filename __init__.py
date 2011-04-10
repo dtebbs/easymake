@@ -10,6 +10,13 @@ allmodules = {}
 
 ############################################################
 
+# flags
+# TOOLS
+# TOOLFLAGS
+# toolflags
+
+
+
 platform = "android"
 config = "debug"
 
@@ -23,7 +30,7 @@ sysincdirs = []
 NDK_ROOT = "../../android-ndk-r5"
 NDK_TOOLCHAIN_ROOT = NDK_ROOT + "/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86"
 NDK_TOOLSBIN = NDK_TOOLCHAIN_ROOT+"/bin"
-NDK_TOOLSLIB = NDK_TOOLCHAIN_ROOT+"/lib/gcc/arm-linux-androideabi/4.4.3/"
+NDK_TOOLSLIB = NDK_TOOLCHAIN_ROOT+"/lib/gcc/arm-linux-androideabi/4.4.3"
 NDK_PLATFORM_ROOT = NDK_ROOT + "/platforms/android-8/arch-arm"
 NDK_PLATFORMLIB = NDK_PLATFORM_ROOT+"/usr/lib"
 
@@ -41,6 +48,7 @@ syslibs = [ NDK_TOOLSLIB+"/libgcc.a",
             NDK_PLATFORMLIB+"/libm.so",
             "-lGLESv1_CM",
             "-llog",
+            "-lz"
             ]
 
 ############################################################
@@ -176,15 +184,19 @@ class Module(object):
                 raise "Unknown module %s" % dep
             depmod._calcdeps()
 
-            # The any dependencies of depmod
+            # Add any dependencies of depmod.  We always track from
+            # right to left, adding on the left.  This keeps a given
+            # module to the left of (i.e. before) it's dependencies.
 
-            for depdep in depmod._fulldeps:
-                if not depdep in self._fulldeps:
-                    self._fulldeps = [ depdep ] + self._fulldeps
+            print "Recursively adding dependencies of %s" % depmod._name
+            for depDep in reversed(depmod._fulldeps):
+                if not depDep in self._fulldeps:
+                    self._fulldeps = [ depDep ] + self._fulldeps
 
             # Add depmod itself
 
-            self._fulldeps = [ depmod ] + self._fulldeps
+            if not depmod in self._fulldeps:
+                self._fulldeps = [ depmod ] + self._fulldeps
         print "Module %s has deps: %s" %(self._name, [a._name for a in self._fulldeps])
 
     #
@@ -323,13 +335,60 @@ class DynamicLibrary(Module):
         #env.Depends(self._target, objects)
 
         cmd  = LINKDLL + " " + LINKDLL_FLAGS
-        cmd += " " + deplibS + " " + objectS
-        cmd += " " + " ".join([ "-L"+path for path in syslibpaths ])
-        cmd += " " + " ".join(syslibs)
+        cmd += " " + objectS
         cmd += " " + LINKDLL_FLAGS_POST
+        cmd += " " + deplibS
+        cmd += " " + " ".join(syslibs)
+        cmd += " " + " ".join([ "-L"+path for path in syslibpaths ])
         cmd += " " + linkdll_out + " $TARGET"
         self._target = env.Command(dllout, objects, cmd)
         env.Depends(self._target, deplibs)
+
+"""
+WORKING:
+../../../../../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-gcc
+ -nostdlib
+ -Wl,-soname,lib.so
+ -Wl,-shared,-Bsymbolic
+ <object files>
+ -Wl,--no-whole-archive --sysroot=../../../../../../android-ndk-r5/platforms/android-8/arch-arm
+ ../../../../../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/lib/gcc/arm-linux-androideabi/4.4.3/libgcc.a
+ ../../../../../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib/libc.so
+ ../../../../../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib/libstdc++.so
+ ../../../../../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib/libm.so
+ -Wl,--no-undefined
+ -Wl,-z,noexecstack
+ -L../../../../../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib
+ -lGLESv1_CM
+ -llog
+ -Wl,-rpath-link=../../../../../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib
+ -o libs/armeabi/liboyk-core.so
+"""
+
+"""
+../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-gcc
+* -nostdlib
+* -Wl,-soname,lib.so
+* -Wl,-shared,-Bsymbolic
+ <objects>
+ lib/android-debug/libtherunlib.a lib/android-debug/libdgamesystem.a
+ lib/android-debug/libpng.a
+ lib/android-debug/libdmath.a
+ lib/android-debug/libdsystem.a
+ lib/android-debug/libandroidplatform.a
+ -L../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib
+ ../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/lib/gcc/arm-linux-androideabi/4.4.3/libgcc.a
+ ../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib/libc.so
+ ../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib/libstdc++.so
+ ../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib/libm.so
+ -lGLESv1_CM
+ -llog
+ -Wl,--no-whole-archive
+ --sysroot=../../android-ndk-r5/platforms/android-8/arch-arm-Wl,--no-undefined
+ -Wl,-z,noexecstack-Wl,-rpath-link=../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib
+ -o dll/android-debug/libtherun.so
+"""
+
 
         # self._target = env.SharedLibrary(target=DLLPATH+"/"+self._name,
         #                                  source=objects)
