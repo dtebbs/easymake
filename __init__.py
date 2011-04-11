@@ -109,16 +109,15 @@ class Module(object):
     #
     def _calcdeps(self):
         if not self._fulldeps is None:
-            print "earlying out (%s)" %self._name
             return
 
         self._fulldeps = []
         for dep in self._depnames:
             if isinstance(dep, str):
-                print "dep is name: %s" % dep
+                #print "dep is name: %s" % dep
                 depmod = allmodules[dep]
             elif isinstance(dep, Module):
-                print "dep is module: %s" % dep
+                #print "dep is module: %s" % dep
                 depmod = dep
             else:
                 raise "Unknown module %s" % dep
@@ -128,7 +127,7 @@ class Module(object):
             # right to left, adding on the left.  This keeps a given
             # module to the left of (i.e. before) it's dependencies.
 
-            print "Recursively adding dependencies of %s" % depmod._name
+            #print "Recursively adding dependencies of %s" % depmod._name
             for depDep in reversed(depmod._fulldeps):
                 if not depDep in self._fulldeps:
                     self._fulldeps = [ depDep ] + self._fulldeps
@@ -170,7 +169,7 @@ class Module(object):
                 allsrc += env.Glob(sf)
 
         srcS = [str(s) for s in allsrc]
-        print "Mod %s: src: %s" %(self._name, srcS)
+        #print "Mod %s: src: %s" %(self._name, srcS)
 
         # Object directory
 
@@ -178,11 +177,14 @@ class Module(object):
 
         # Full include paths for this module
 
-        includepaths = settings.sysincdirs
+        includepaths = [] + settings.sysincdirs
+        #print "Just sys includes: %s" % includepaths
         for d in self._fulldeps:
-            includepaths += [ d._incdirs ]
-        includepaths += [ self._incdirs ]
+            #print " Dep %s has includes: %s" % (d._name, d._incdirs)
+            includepaths += d._incdirs
+        includepaths += self._incdirs
         includepaths += self._incdirs_internal
+        #print "Full includes: %s" % includepaths
 
         # Create the rules
 
@@ -193,7 +195,7 @@ class Module(object):
             (objname, ext) = os.path.splitext(sbase)
 
             obj=objectpath+"/"+objname
-            print "Object: %s source: %s" % (obj, s)
+            #print "Object: %s source: %s" % (obj, s)
 
             objects += env.Object(source=s,
                                   target=obj,
@@ -201,6 +203,24 @@ class Module(object):
 
         self._objects = objects
         return objects
+
+    def _definescons(self, env, config, settings):
+        if not self._target is None:
+            return
+
+        # Make sure all deps targets are created
+
+        for d in self._fulldeps:
+            d._definescons(env, config, settings)
+
+        # Call subclass
+
+        self._target = self._do_definescons(env, config, settings)
+
+        # Set alias for the Module name
+
+        env.Alias(self._name, self._target)
+
 
 #
 #
@@ -227,9 +247,7 @@ class Library(Module):
         libs[name] = self
 
     #
-    def _definescons(self, env, config, settings):
-        if not self._target is None:
-            return
+    def _do_definescons(self, env, config, settings):
 
         # Make sure objects have been defined for this module
 
@@ -239,15 +257,15 @@ class Library(Module):
 
         if not settings.scons_make_staticlib is None:
             fn = settings.scons_make_staticlib
-            self._target = fn(mod, env, config, settings)
-            return
+            return fn(mod, env, config, settings)
 
         # Not much to do for static libs
 
         libfile = settings.LIBPATH+"/"+self._name
-        self._target = env.StaticLibrary(target=libfile,
+        target = env.StaticLibrary(target=libfile,
                                          source=objects)
-        print "Lib: %s target: %s" % (self._name, self._target)
+
+        return target
 
 #
 #
@@ -272,23 +290,17 @@ class DynamicLibrary(Module):
             print "DynamicLibrary %s already defined" % name
         dlls[name] = self
 
-    def _definescons(self, env, config, settings):
-        if not self._target is None:
-            return
+    def _do_definescons(self, env, config, settings):
 
-        # Make sure all deps targets are created, and get the object
-        # list
+        # Get object list
 
-        for d in self._fulldeps:
-            d._definescons(env, config, settings)
         objects = self._defineobjects(env, config, settings)
 
         # Platform-specific version?
 
         if not settings.scons_make_dynamiclib is None:
             fn = settings.scons_make_dynamiclib
-            self._target = fn(self, env, config, settings)
-            return
+            return fn(self, env, config, settings)
 
         # Standard version.  Get all lib requirements
 
@@ -300,45 +312,59 @@ class DynamicLibrary(Module):
         dllout = settings.DLLPATH + "/lib" + self._name + ".so"
         syslibpaths = settings.syslibpaths
 
-        self._target = env.SharedLibrary(target = dllout,
-                                         source = objects,
-                                         LIBS = deplibs,
-                                         LIBPATH = syslibpaths)
+        return env.SharedLibrary(target = dllout,
+                                 source = objects,
+                                 LIBS = deplibs,
+                                 LIBPATH = syslibpaths)
 
+############################################################
 
-"""
-../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/bin/arm-linux-androideabi-gcc
-* -nostdlib
-* -Wl,-soname,lib.so
-* -Wl,-shared,-Bsymbolic
- <objects>
- lib/android-debug/libtherunlib.a lib/android-debug/libdgamesystem.a
- lib/android-debug/libpng.a
- lib/android-debug/libdmath.a
- lib/android-debug/libdsystem.a
- lib/android-debug/libandroidplatform.a
- -L../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib
- ../../android-ndk-r5/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86/lib/gcc/arm-linux-androideabi/4.4.3/libgcc.a
- ../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib/libc.so
- ../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib/libstdc++.so
- ../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib/libm.so
- -lGLESv1_CM
- -llog
- -Wl,--no-whole-archive
- --sysroot=../../android-ndk-r5/platforms/android-8/arch-arm-Wl,--no-undefined
- -Wl,-z,noexecstack-Wl,-rpath-link=../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib
- -o dll/android-debug/libtherun.so
-"""
+class ExternalCommand(Module):
+    def __init__(self, name, output,
+                 command,
+                 deps=[],
+                 srcfiles=[],
+                 ):
+        super(ExternalCommand, self).__init__(name,
+                                              [],
+                                              [],
+                                              deps,
+                                              [],
+                                              [],
+                                              [])
+        self._cmdsrc = _make_str_array(srcfiles)
+        self._cmd = command
+        self._output = _make_str_array(output)
 
+        externalcommands[name] = self
 
-        # self._target = env.SharedLibrary(target=DLLPATH+"/"+self._name,
-        #                                  source=objects)
+    def _do_definescons(self, env, config, settings):
+        mydeps = []
+        for d in self._depnames:
+            print "%s" % d._name
+            mydeps += d._target
+
+        #print "Command %s deps: %s" % (self._name, [str(i) for i in mydeps])
+
+        if len(self._output) == 0:
+            target = env.AlwaysBuild(env.Alias(self._name+"always", self._cmdsrc+mydeps, self._cmd))
+        else:
+            target = env.Command(self._output, self._cmdsrc+mydeps, self._cmd)
+
+        env.Depends(target, mydeps)
+        return target
+
+############################################################
+
+def add_default(env, mod):
+    env.Default(mod._target)
 
 ############################################################
 
 libs = {}
 dlls = {}
 apps = {}
+externalcommands = {}
 allmodules = {}
 
 ############################################################
@@ -352,7 +378,7 @@ def setenv(env, name, value):
         return
     if isinstance(value, list) and len(value) == 0:
         return
-    print "setting env['%s'] = %s" % (name, value)
+    #print "setting env['%s'] = %s" % (name, value)
     env[name] = value
 
 def build(env, config, settings = None):
@@ -387,6 +413,8 @@ def build(env, config, settings = None):
         allmodules[m] = dlls[m]
     for m in apps:
         allmodules[m] = apps[m]
+    for m in externalcommands:
+        allmodules[m] = externalcommands[m]
 
     # Calculate full dependencies
 
