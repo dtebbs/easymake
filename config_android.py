@@ -17,6 +17,7 @@ WORKING:
  -Wl,-z,noexecstack
  -L../../../../../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib
  -lGLESv1_CM
+ -lGLESv2
  -llog
  -Wl,-rpath-link=../../../../../../android-ndk-r5/platforms/android-8/arch-arm/usr/lib
  -o libs/armeabi/liboyk-core.so
@@ -98,10 +99,13 @@ def _config(config, settings):
                           NDK_PLATFORMLIB+"/libc.so",
                           NDK_PLATFORMLIB+"/libstdc++.so",
                           NDK_PLATFORMLIB+"/libm.so",
-                          "-lGLESv1_CM",
+                          "-lGLESv2",
                           "-llog",
                           "-lz"
                           ]
+
+#                          "-lGLESv1_CM",
+
     settings.dllsyslibs += settings.syslibs
 
     # Compile flags
@@ -128,9 +132,9 @@ def _config(config, settings):
                     "-DANDROID" ]
 
     if config.buildconfig == "debug":
-        commonflags += [ "-O0", "-DDEBUG", "-D_DEBUG" ]
+        commonflags += [ "-O0" ]
     else:
-        commonflags += [ "-Os", "-DNDEBUG" ]
+        commonflags += [ "-Os" ]
 
     # CXX
 

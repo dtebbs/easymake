@@ -7,11 +7,13 @@ print "Import easymake"
 
 class Config(object):
     def __init__(self,
-                 buildconfig="debug",
-                 platform="android"
+                 buildconfig,
+                 platform,
                  ):
         self.buildconfig = buildconfig
         self.platform = platform
+        print "config=%s, platform=%s" %(buildconfig, platform)
+
 
 ############################################################
 
@@ -24,6 +26,7 @@ class Settings(object):
         self.OBJPATH = "obj/%s-%s" % (platform, buildconfig)
         self.LIBPATH = "lib/%s-%s" % (platform, buildconfig)
         self.DLLPATH = "dll/%s-%s" % (platform, buildconfig)
+        self.APPPATH = "bin/%s-%s" % (platform, buildconfig)
 
         self.sysincdirs = []
         self.syslibpaths = []
@@ -38,10 +41,16 @@ class Settings(object):
         self.RANLIB = None
         self.LIBTOOL = None
         self.LINK = None
+        self.LINKFLAGS = []
+
+        self.srcexts = ['c', 'cpp']
+
+        self.make_appfile = lambda c, s, name: s.APPPATH+"/"+name+".bin"
 
         self.scons_make_objects = None
         self.scons_make_staticlib = None
         self.scons_make_dynamiclib = None
+        self.scons_make_application = None
 
         pass
 
@@ -74,11 +83,19 @@ def _make_str_array(stringOrArray):
 #
 #
 #
+class NoModule(object):
+    def __init__(self):
+        pass
+
+
+#
+#
+#
 class Module(object):
     # _name
     # _srcdirs
     # _incdirs
-    # _depnames
+    # _deps
     # _fulldeps
     def __init__(self, name,
                  srcdirs,
@@ -86,7 +103,8 @@ class Module(object):
                  deps,
                  srcfiles,
                  srcexcludes,
-                 incdirs_internal):
+                 incdirs_internal,
+                 cxxflags):
         self._name = name
 
         if (srcfiles != []) and (srcdirs != []):
@@ -97,9 +115,10 @@ class Module(object):
         self._srcfiles = _make_str_array(srcfiles)
         self._srcexcludes = _make_str_array(srcexcludes)
         self._incdirs_internal = _make_str_array(incdirs_internal)
+        self._cxxflags = _make_str_array(cxxflags)
 
         # Deps get resolved later
-        self._depnames = deps
+        self._deps = deps
 
         # For now, keep these as None
         self._fulldeps = None
@@ -112,7 +131,12 @@ class Module(object):
             return
 
         self._fulldeps = []
-        for dep in self._depnames:
+        for dep in self._deps:
+
+            # Filter out any dummy modules
+            if isinstance(dep, NoModule):
+                continue
+
             if isinstance(dep, str):
                 #print "dep is name: %s" % dep
                 depmod = allmodules[dep]
@@ -136,7 +160,7 @@ class Module(object):
 
             if not depmod in self._fulldeps:
                 self._fulldeps = [ depmod ] + self._fulldeps
-        print "Module %s has deps: %s" %(self._name, [a._name for a in self._fulldeps])
+        #print "Module %s has deps: %s" %(self._name, [a._name for a in self._fulldeps])
 
     #
     def _defineobjects(self, env, config, settings):
@@ -152,10 +176,11 @@ class Module(object):
         # excludes.
 
         allsrc = []
+        globres = []
 
         for sd in self._srcdirs:
-            globres = env.Glob(sd + "/*.cpp")
-            globres += env.Glob(sd + "/*.c")
+            for e in settings.srcexts:
+                globres += env.Glob(sd + "/*."+e)
 
             srcglob = []
             for g in globres:
@@ -186,6 +211,13 @@ class Module(object):
         includepaths += self._incdirs_internal
         #print "Full includes: %s" % includepaths
 
+        # Flags
+
+        flags = [] + settings.CXXFLAGS
+        for d in self._fulldeps:
+            flags += d._cxxflags
+        flags += self._cxxflags
+
         # Create the rules
 
         objects = []
@@ -199,7 +231,8 @@ class Module(object):
 
             objects += env.Object(source=s,
                                   target=obj,
-                                  CPPPATH=includepaths)
+                                  CPPPATH=includepaths,
+                                  CXXFLAGS=flags)
 
         self._objects = objects
         return objects
@@ -234,14 +267,16 @@ class Library(Module):
                  deps=[],
                  srcfiles = [],
                  srcexcludes = [],
-                 incdirs_internal = []):
+                 incdirs_internal = [],
+                 cxxflags = []):
         super(Library, self).__init__(name,
                                       srcdirs,
                                       incdirs,
                                       deps,
                                       srcfiles,
                                       srcexcludes,
-                                      incdirs_internal)
+                                      incdirs_internal,
+                                      cxxflags)
         if name in libs:
             print "Library %s already defined" % name
         libs[name] = self
@@ -278,14 +313,16 @@ class DynamicLibrary(Module):
                  deps=[],
                  srcfiles = [],
                  srcexcludes = [],
-                 incdirs_internal = []):
+                 incdirs_internal = [],
+                 cxxflags = []):
         super(DynamicLibrary, self).__init__(name,
                                              srcdirs,
                                              incdirs,
                                              deps,
                                              srcfiles,
                                              srcexcludes,
-                                             incdirs_internal)
+                                             incdirs_internal,
+                                             cxxflags)
         if name in dlls:
             print "DynamicLibrary %s already defined" % name
         dlls[name] = self
@@ -319,6 +356,78 @@ class DynamicLibrary(Module):
 
 ############################################################
 
+#
+#
+#
+class Application(Module):
+
+    def __init__(self, name,
+                 srcdirs=[],
+                 incdirs=[],
+                 deps=[],
+                 srcfiles = [],
+                 srcexcludes = [],
+                 incdirs_internal = [],
+                 cxxflags = [],
+                 cwd = ".",
+                 args = []):
+        super(Application, self).__init__(name,
+                                          srcdirs,
+                                          incdirs,
+                                          deps,
+                                          srcfiles,
+                                          srcexcludes,
+                                          incdirs_internal,
+                                          cxxflags)
+
+        self._cwd = cwd
+        self._args = args
+
+        if name in apps:
+            print "Application %s already defined" % name
+        apps[name] = self
+
+    def _do_definescons(self, env, config, settings):
+
+        # Get object list
+
+        objects = self._defineobjects(env, config, settings)
+
+        # Platform-specific version?
+
+        if not settings.scons_make_application is None:
+            fn = settings.scons_make_application
+            return fn(self, env, config, settings)
+
+        # Standard version.  Get all lib requirements
+
+        deplibs = []
+        for d in self._fulldeps:
+            deplibs += d._target
+        deplibs += settings.syslibs
+
+        appout = settings.make_appfile(config, settings, self._name)
+        syslibpaths = settings.syslibpaths
+
+        prog = env.Program(target = appout,
+                           source = objects,
+                           LIBS = deplibs,
+                           LIBPATH = syslibpaths)
+
+        # Define '<name>_run' as a secondary alias
+
+        cmd = ""
+        if self._cwd != ".":
+            cmd += "cd "+self._cwd+" && "
+        cmd += os.path.abspath(str(prog[0]))
+        cmd += " ".join(self._args)
+
+        run = env.AlwaysBuild(env.Alias(self._name+"_run", prog, cmd))
+
+        return prog
+
+############################################################
+
 class ExternalCommand(Module):
     def __init__(self, name, output,
                  command,
@@ -331,6 +440,7 @@ class ExternalCommand(Module):
                                               deps,
                                               [],
                                               [],
+                                              [],
                                               [])
         self._cmdsrc = _make_str_array(srcfiles)
         self._cmd = command
@@ -340,8 +450,8 @@ class ExternalCommand(Module):
 
     def _do_definescons(self, env, config, settings):
         mydeps = []
-        for d in self._depnames:
-            print "%s" % d._name
+        for d in self._deps:
+            #print "%s" % d._name
             mydeps += d._target
 
         #print "Command %s deps: %s" % (self._name, [str(i) for i in mydeps])
@@ -404,6 +514,7 @@ def build(env, config, settings = None):
     setenv(env, 'RANLIB', settings.RANLIB)
     setenv(env, 'LIBTOOL', settings.LIBTOOL)
     setenv(env, 'LINK', settings.LINK)
+    setenv(env, 'LINKFLAGS', settings.LINKFLAGS)
 
     # List of all modules
 
