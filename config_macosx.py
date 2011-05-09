@@ -16,3 +16,12 @@ def _config(config, settings):
 
     settings.make_appfile = make_appfile_macosx
 
+    # Set the name of the build config in XCode
+
+    if config.buildconfig == "debug":
+        settings._xcodeconfig="Debug"
+    elif config.buildconfig == "release":
+        settings._xcodeconfig="Release"
+    else:
+        throw ("Don't understand build config '%s'" % config.buildconfig)
+

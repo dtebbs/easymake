@@ -52,7 +52,10 @@ class Settings(object):
         self.scons_make_dynamiclib = None
         self.scons_make_application = None
 
-        pass
+        # Settings for this platform
+
+        exec('import config_'+config.platform+ ' as _config')
+        _config._config(config, self)
 
 ############################################################
 
@@ -449,8 +452,12 @@ class ExternalCommand(Module):
         externalcommands[name] = self
 
     def _do_definescons(self, env, config, settings):
+
+        # Require ALL dependency targets to be built before running
+        # the command
+
         mydeps = []
-        for d in self._deps:
+        for d in self._fulldeps:
             #print "%s" % d._name
             mydeps += d._target
 
@@ -493,16 +500,8 @@ def setenv(env, name, value):
 
 def build(env, config, settings = None):
 
-    # Settings for this platform
-
-    exec('import config_'+config.platform+ ' as _config')
-
     if settings is None:
         settings = Settings(config)
-
-    # configuration
-
-    _config._config(config, settings)
 
     # Set up the env
 
