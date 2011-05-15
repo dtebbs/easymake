@@ -40,6 +40,8 @@ class Settings(object):
         self.AR = None
         self.RANLIB = None
         self.LIBTOOL = None
+        self.DLLTOOL = None
+        self.DLLFLAGS = []
         self.LINK = None
         self.LINKFLAGS = []
 
@@ -271,7 +273,8 @@ class Library(Module):
                  srcfiles = [],
                  srcexcludes = [],
                  incdirs_internal = [],
-                 cxxflags = []):
+                 cxxflags = [],
+                 includedeps = False):
         super(Library, self).__init__(name,
                                       srcdirs,
                                       incdirs,
@@ -280,6 +283,7 @@ class Library(Module):
                                       srcexcludes,
                                       incdirs_internal,
                                       cxxflags)
+        self._includedeps = includedeps
         if name in libs:
             print "Library %s already defined" % name
         libs[name] = self
@@ -291,6 +295,10 @@ class Library(Module):
 
         objects = self._defineobjects(env, config, settings)
 
+        if self._includedeps:
+            for d in self._fulldeps:
+                objects += [ d._objects ]
+
         # Custom static lib creation?
 
         if not settings.scons_make_staticlib is None:
@@ -301,7 +309,7 @@ class Library(Module):
 
         libfile = settings.LIBPATH+"/"+self._name
         target = env.StaticLibrary(target=libfile,
-                                         source=objects)
+                                   source=objects)
 
         return target
 
@@ -355,7 +363,8 @@ class DynamicLibrary(Module):
         return env.SharedLibrary(target = dllout,
                                  source = objects,
                                  LIBS = deplibs,
-                                 LIBPATH = syslibpaths)
+                                 LIBPATH = syslibpaths,
+                                 LINKFLAGS = settings.DLLFLAGS)
 
 ############################################################
 

@@ -2,9 +2,13 @@
 print "Importing macosx Config"
 
 def _config(config, settings):
-    settings.CXXFLAGS += ['-arch', 'i386', '-DMACOSX', '-g']
-    settings.CFLAGS += ['-arch', 'i386', '-DMACOSX', '-g']
+    commonCFLAGS = ['-arch', 'i386', '-DMACOSX', '-fPIC', '-g']
+    settings.CXXFLAGS += commonCFLAGS
+    settings.CFLAGS += commonCFLAGS
+
     settings.LINKFLAGS += ['-arch', 'i386', '-g']
+
+    settings.DLLFLAGS += ['-shared']
 
     settings.srcexts += ['mm']
 
