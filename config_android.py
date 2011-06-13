@@ -49,8 +49,11 @@ def scons_make_dynamiclib(mod, env, config, settings):
     objects = mod._objects
 
     deplibs = []
+    depldflags = []
     for d in mod._fulldeps:
         deplibs += d._target
+        depldflags += d._ldflags
+    depldflags += mod._ldflags
 
     dllout = settings.DLLPATH + "/lib" + mod._name + ".so"
     deplibsS = [ str(l) for l in deplibs ]
@@ -69,6 +72,7 @@ def scons_make_dynamiclib(mod, env, config, settings):
     cmd += " " + LINKDLL_FLAGS_POST
     cmd += " " + deplibS
     cmd += " " + " ".join(syslibs)
+    cmd += " " + " ".join(depldflags)
     cmd += " " + " ".join([ "-L"+path for path in syslibpaths ])
     cmd += " " + linkdll_out + " $TARGET"
 
@@ -99,7 +103,6 @@ def _config(config, settings):
                           NDK_PLATFORMLIB+"/libc.so",
                           NDK_PLATFORMLIB+"/libstdc++.so",
                           NDK_PLATFORMLIB+"/libm.so",
-                          "-lGLESv2",
                           "-llog",
                           "-lz"
                           ]

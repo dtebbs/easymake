@@ -14,7 +14,6 @@ class Config(object):
         self.platform = platform
         print "config=%s, platform=%s" %(buildconfig, platform)
 
-
 ############################################################
 
 class Settings(object):
@@ -109,7 +108,8 @@ class Module(object):
                  srcfiles,
                  srcexcludes,
                  incdirs_internal,
-                 cxxflags):
+                 cxxflags,
+                 ldflags):
         self._name = name
 
         if (srcfiles != []) and (srcdirs != []):
@@ -121,6 +121,8 @@ class Module(object):
         self._srcexcludes = _make_str_array(srcexcludes)
         self._incdirs_internal = _make_str_array(incdirs_internal)
         self._cxxflags = _make_str_array(cxxflags)
+        self._ldflags = _make_str_array(ldflags)
+        #print "mod %s has ldflags: %s" % (name, self._ldflags)
 
         # Deps get resolved later
         self._deps = deps
@@ -259,6 +261,8 @@ class Module(object):
 
         env.Alias(self._name, self._target)
 
+    def _do_post_definescons(self, env, config, settings):
+        pass
 
 #
 #
@@ -274,6 +278,7 @@ class Library(Module):
                  srcexcludes = [],
                  incdirs_internal = [],
                  cxxflags = [],
+                 ldflags = [],
                  includedeps = False):
         super(Library, self).__init__(name,
                                       srcdirs,
@@ -282,7 +287,8 @@ class Library(Module):
                                       srcfiles,
                                       srcexcludes,
                                       incdirs_internal,
-                                      cxxflags)
+                                      cxxflags,
+                                      ldflags)
         self._includedeps = includedeps
         if name in libs:
             print "Library %s already defined" % name
@@ -325,7 +331,8 @@ class DynamicLibrary(Module):
                  srcfiles = [],
                  srcexcludes = [],
                  incdirs_internal = [],
-                 cxxflags = []):
+                 cxxflags = [],
+                 ldflags = []):
         super(DynamicLibrary, self).__init__(name,
                                              srcdirs,
                                              incdirs,
@@ -333,7 +340,8 @@ class DynamicLibrary(Module):
                                              srcfiles,
                                              srcexcludes,
                                              incdirs_internal,
-                                             cxxflags)
+                                             cxxflags,
+                                             ldflags)
         if name in dlls:
             print "DynamicLibrary %s already defined" % name
         dlls[name] = self
@@ -350,11 +358,15 @@ class DynamicLibrary(Module):
             fn = settings.scons_make_dynamiclib
             return fn(self, env, config, settings)
 
+
         # Standard version.  Get all lib requirements
 
         deplibs = []
+        depldflags = self._ldflags
+
         for d in self._fulldeps:
             deplibs += d._target
+            depldflags += d._ldflags
         deplibs += settings.dllsyslibs
 
         dllout = settings.DLLPATH + "/lib" + self._name + ".so"
@@ -364,7 +376,7 @@ class DynamicLibrary(Module):
                                  source = objects,
                                  LIBS = deplibs,
                                  LIBPATH = syslibpaths,
-                                 LINKFLAGS = settings.DLLFLAGS)
+                                 LINKFLAGS = settings.DLLFLAGS + depldflags)
 
 ############################################################
 
@@ -381,6 +393,7 @@ class Application(Module):
                  srcexcludes = [],
                  incdirs_internal = [],
                  cxxflags = [],
+                 ldflags = [],
                  cwd = ".",
                  args = []):
         super(Application, self).__init__(name,
@@ -390,7 +403,8 @@ class Application(Module):
                                           srcfiles,
                                           srcexcludes,
                                           incdirs_internal,
-                                          cxxflags)
+                                          cxxflags,
+                                          ldflags)
 
         self._cwd = cwd
         self._args = args
@@ -414,8 +428,10 @@ class Application(Module):
         # Standard version.  Get all lib requirements
 
         deplibs = []
+        depldflags = self._ldflags
         for d in self._fulldeps:
             deplibs += d._target
+            depldflags += d._ldflags
         deplibs += settings.syslibs
 
         appout = settings.make_appfile(config, settings, self._name)
@@ -424,7 +440,8 @@ class Application(Module):
         prog = env.Program(target = appout,
                            source = objects,
                            LIBS = deplibs,
-                           LIBPATH = syslibpaths)
+                           LIBPATH = syslibpaths,
+                           LINKFLAGS = depldflags + settings.LINKFLAGS)
 
         # Define '<name>_run' as a secondary alias
 
@@ -434,9 +451,48 @@ class Application(Module):
         cmd += os.path.abspath(str(prog[0]))
         cmd += " ".join(self._args)
 
-        run = env.AlwaysBuild(env.Alias(self._name+"_run", prog, cmd))
+        self._run = env.AlwaysBuild(env.Alias(self._name+"_run", prog, cmd))
 
         return prog
+
+############################################################
+
+tests = []
+testtarget = None
+
+class Test(Application):
+
+    def __init__(self, name,
+                 srcdirs=[],
+                 incdirs=[],
+                 deps=[],
+                 srcfiles = [],
+                 srcexcludes = [],
+                 incdirs_internal = [],
+                 cxxflags = [],
+                 ldflags = [],
+                 cwd = ".",
+                 args = []):
+        super(Test, self).__init__(name,
+                                   srcdirs,
+                                   incdirs,
+                                   deps,
+                                   srcfiles,
+                                   srcexcludes,
+                                   incdirs_internal,
+                                   cxxflags,
+                                   ldflags)
+        tests.append(self)
+
+    def _do_definescons(self, env, config, settings):
+        Application._do_definescons(self, env, config, settings)
+
+    def _do_post_definescons(self, env, config, settings):
+        global testtarget
+        if testtarget is None:
+            print "Defining 'tests' ..."
+            testtarget = env.AlwaysBuild(env.Alias("tests", [t._run for t in tests]))
+
 
 ############################################################
 
@@ -450,6 +506,7 @@ class ExternalCommand(Module):
                                               [],
                                               [],
                                               deps,
+                                              [],
                                               [],
                                               [],
                                               [],
@@ -546,4 +603,10 @@ def build(env, config, settings = None):
     for m in allmodules:
         mod = allmodules[m]
         mod._definescons(env, config, settings)
+
+    # Post-define rules
+
+    for m in allmodules:
+        mod = allmodules[m]
+        mod._do_post_definescons(env, config, settings)
 
