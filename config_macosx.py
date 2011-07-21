@@ -14,7 +14,7 @@ def _config(config, settings):
 
     def make_appfile_macosx(config, settings, name):
         f = settings.APPPATH+"/"
-        f += name+".app/Contents/MacOS/"
+        #f += name+".app/Contents/MacOS/"
         f += name+".bin"
         return f
 

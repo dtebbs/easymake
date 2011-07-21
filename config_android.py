@@ -24,11 +24,17 @@ WORKING:
 """
 
 NDK_ROOT = "../../android-ndk-r5"
+
 NDK_TOOLCHAIN_ROOT = NDK_ROOT + "/toolchains/arm-linux-androideabi-4.4.3/prebuilt/darwin-x86"
 NDK_TOOLSBIN = NDK_TOOLCHAIN_ROOT+"/bin"
 NDK_TOOLSLIB = NDK_TOOLCHAIN_ROOT+"/lib/gcc/arm-linux-androideabi/4.4.3"
+
 NDK_PLATFORM_ROOT = NDK_ROOT + "/platforms/android-8/arch-arm"
 NDK_PLATFORMLIB = NDK_PLATFORM_ROOT+"/usr/lib"
+
+NDK_STLPORT_ROOT = NDK_ROOT+"/sources/cxx-stl/stlport"
+NDK_STLPORTLIB = NDK_STLPORT_ROOT+"/libs/armeabi"
+NDK_STLPORTINC = NDK_STLPORT_ROOT+"/stlport"
 
 LINKDLL = NDK_TOOLSBIN + "/arm-linux-androideabi-gcc"
 LINKDLL_FLAGS = " -nostdlib -Wl,-soname,lib.so -Wl,-shared,-Bsymbolic"
@@ -103,6 +109,7 @@ def _config(config, settings):
                           NDK_PLATFORMLIB+"/libc.so",
                           NDK_PLATFORMLIB+"/libstdc++.so",
                           NDK_PLATFORMLIB+"/libm.so",
+                          NDK_STLPORTLIB+"/libstlport_static.a",
                           "-llog",
                           "-lz"
                           ]
@@ -157,7 +164,8 @@ def _config(config, settings):
 
     settings.sysincdirs += [
         NDK_PLATFORM_ROOT+"/usr/include",
-        NDK_ROOT+"/sources/cxx-stl/system/include" ]
+        NDK_ROOT+"/sources/cxx-stl/system/include",
+        NDK_STLPORTINC ]
 
     # AR
 
